@@ -64,6 +64,20 @@ With `--json` the findings are printed as a JSON array of `{ "file", "rule", "me
 
 Exit code is 1 if anything is flagged, 0 if clean, 2 if the path cannot be read. Run `node selftest.js` to check the script itself.
 
+## GitHub Action
+
+Run the same check in a workflow, for example on a pull request from someone you do not know, before any install step:
+
+```yaml
+- uses: actions/checkout@v5
+- uses: cryptostrapon/npm-install-audit@v1.3.2
+  with:
+    path: .                  # folder to check
+    fail-on-findings: true   # set to false to only report
+```
+
+The step fails when anything is flagged and sets the `findings` output to the number of findings.
+
 ## What it flags
 
 - install hooks that run a command
@@ -94,6 +108,7 @@ A clean result is not proof of safety. Obfuscated code, code fetched later, and 
 
 ## Changelog
 
+- **1.3.2:** adds a GitHub Action (`action.yml`), so the same check can run in a workflow before any install step. No change to the checks.
 - **1.3.1:** available on npm (`npx npm-install-audit ./repo`). Releases are published from GitHub Actions through npm trusted publishing, with provenance and no stored npm token. No change to the checks.
 - **1.3.0:** flags `.npmrc` and Yarn config files that ship a registry auth token or point installs to a non-npmjs registry, including scoped `@scope:registry` entries.
 - **1.2.1:** also scans `.jsx` and `.tsx` files, so code hidden in React components of a Next.js or Vite project is checked too.
