@@ -82,7 +82,7 @@ const check = (name, cond) => {
 
 // Version check (v1.1.0)
 const v = spawnSync(process.execPath, [path.join(__dirname, "audit.js"), "--version"], { encoding: "utf8" });
-check("--version prints version", v.status === 0 && /npm-install-audit 1\.3\.1/.test(v.stdout));
+check("--version prints version", v.status === 0 && /npm-install-audit 1\.3\.2/.test(v.stdout));
 
 // Original checks
 const clean = run(path.join(tmp, "clean"));

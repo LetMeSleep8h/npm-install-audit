@@ -1,6 +1,6 @@
 {
   "name": "npm-install-audit",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Zero dependency check to run before npm install on a repo you did not write: install hooks, risky code, git hooks, VS Code tasks and registry tokens.",
   "bin": {
     "npm-install-audit": "audit.js"
