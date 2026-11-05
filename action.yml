@@ -1,0 +1,42 @@
+name: 'npm-install-audit'
+description: 'Check a repo you did not write for install hooks, git hooks and registry tricks before npm install'
+author: 'CryptoStrapon'
+branding:
+  icon: 'shield'
+  color: 'orange'
+
+inputs:
+  path:
+    description: 'Folder to check, relative to the workspace'
+    required: false
+    default: '.'
+  fail-on-findings:
+    description: 'Fail the step when anything is flagged (true or false)'
+    required: false
+    default: 'true'
+
+outputs:
+  findings:
+    description: 'Number of findings'
+    value: ${{ steps.audit.outputs.findings }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: audit
+      shell: bash
+      env:
+        NIA_PATH: ${{ inputs.path }}
+        NIA_FAIL: ${{ inputs.fail-on-findings }}
+      run: |
+        set +e
+        node "$GITHUB_ACTION_PATH/audit.js" "$NIA_PATH"
+        code=$?
+        count=$(node "$GITHUB_ACTION_PATH/audit.js" --json "$NIA_PATH" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(Array.isArray(j)?j.length:0)}catch{console.log(0)}})')
+        echo "findings=$count" >> "$GITHUB_OUTPUT"
+        if [ "$code" -eq 2 ]; then exit 2; fi
+        if [ "$code" -eq 1 ] && [ "$NIA_FAIL" = "true" ]; then
+          echo "::error::npm-install-audit flagged $count finding(s). Read them before you run npm install."
+          exit 1
+        fi
+        exit 0
