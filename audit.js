@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 
-if (process.argv.includes("--version")) { console.log("npm-install-audit 1.3.1"); process.exit(0); }
+if (process.argv.includes("--version")) { console.log("npm-install-audit 1.3.2"); process.exit(0); }
 
 const args = process.argv.slice(2);
 const jsonMode = args.includes("--json");
