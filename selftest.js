@@ -51,6 +51,14 @@ write("npmrc-bad/.yarnrc.yml", 'npmRegistryServer: "https://yarn.evil.example"\n
 write("npmrc-ok/package.json", JSON.stringify({ name: "npmrc-ok" }));
 write("npmrc-ok/.npmrc", "registry=https://registry.npmjs.org/\nsave-exact=true\n");
 
+// pnpm hook files run during install even without a package.json install script.
+const pnpmMarker = path.join(tmp, "pnpm-hook-executed");
+write("pnpm-hook/.pnpmfile.cjs", 'require("fs").writeFileSync(' + JSON.stringify(pnpmMarker) + ', "executed");\nmodule.exports = { hooks: {} };\n');
+write("pnpm-risky/.pnpmfile.cjs", 'const cp = require("child_process");\nmodule.exports = { hooks: {} };\n');
+write("pnpm-empty/.pnpmfile.cjs", "");
+write("pnpm-lookalike/pnpmfile.cjs", 'module.exports = {};\n');
+write("pnpm-lookalike/.pnpmfile.cjs/index.js", 'module.exports = {};\n');
+
 // Non-registry dependency fixtures (PR #4 feature)
 write(
   "git-dep/package.json",
@@ -139,6 +147,20 @@ check("flags scoped private registry", /@acme packages install from another regi
 check("flags yarn registry server", /\.yarnrc\.yml: installs come from another registry: https:\/\/yarn\.evil\.example/.test(npmrcBad.stdout));
 const npmrcOk = run(path.join(tmp, "npmrc-ok"));
 check("official registry in .npmrc is not flagged", npmrcOk.status === 0);
+
+const pnpmHook = run(path.join(tmp, "pnpm-hook"));
+check("pnpm hook fixture exits 1", pnpmHook.status === 1);
+check("flags inert pnpm hook file", /\.pnpmfile\.cjs: pnpm hook file runs automatically during pnpm install/.test(pnpmHook.stdout));
+check("does not execute the pnpm hook file", !fs.existsSync(pnpmMarker));
+check("flags empty pnpm hook file", run(path.join(tmp, "pnpm-empty")).status === 1);
+check("does not flag pnpm filename or directory lookalikes", run(path.join(tmp, "pnpm-lookalike")).status === 0);
+const pnpmRisky = run(path.join(tmp, "pnpm-risky"));
+check("still scans pnpm hook source for risky patterns", /\.pnpmfile\.cjs: runs shell commands/.test(pnpmRisky.stdout));
+const pnpmJson = run(path.join(tmp, "pnpm-hook"), ["--json"]);
+const pnpmFindings = JSON.parse(pnpmJson.stdout);
+check("--json pnpm hook exits 1", pnpmJson.status === 1);
+check("--json includes pnpm hook finding", pnpmFindings.length === 1 && pnpmFindings[0].file === ".pnpmfile.cjs" && /pnpm hook file/.test(pnpmFindings[0].rule));
+check("--json does not execute the pnpm hook file", !fs.existsSync(pnpmMarker));
 
 const jsonClean = run(path.join(tmp, "clean"), ["--json"]);
 check("--json clean exits 0", jsonClean.status === 0);

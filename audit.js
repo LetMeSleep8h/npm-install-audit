@@ -196,6 +196,7 @@ function walk(dir, depth) {
     if (!e.isFile()) continue;
     if (e.name === "package.json") { checkPackage(p); continue; }
     if (e.name === ".npmrc" || e.name === ".yarnrc" || e.name === ".yarnrc.yml") { checkRegistryConfig(p); continue; }
+    if (e.name === ".pnpmfile.cjs") flag(p, "pnpm hook file runs automatically during pnpm install");
     if (SOURCE_EXT.test(e.name)) {
       let size = 0;
       try { size = fs.statSync(p).size; } catch { continue; }
