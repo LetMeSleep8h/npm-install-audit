@@ -1,6 +1,6 @@
 # npm-install-audit
 
-[![selftest](https://github.com/cryptostrapon/npm-install-audit/actions/workflows/selftest.yml/badge.svg)](https://github.com/cryptostrapon/npm-install-audit/actions/workflows/selftest.yml) [![release](https://img.shields.io/github/v/release/cryptostrapon/npm-install-audit)](https://github.com/cryptostrapon/npm-install-audit/releases) [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) ![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen) [![GitHub stars](https://img.shields.io/github/stars/cryptostrapon/npm-install-audit?style=social)](https://github.com/cryptostrapon/npm-install-audit/stargazers)
+[![selftest](https://github.com/cryptostrapon/npm-install-audit/actions/workflows/selftest.yml/badge.svg)](https://github.com/cryptostrapon/npm-install-audit/actions/workflows/selftest.yml) [![release](https://img.shields.io/github/v/release/cryptostrapon/npm-install-audit)](https://github.com/cryptostrapon/npm-install-audit/releases) [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-npm--install--audit-blue?logo=github)](https://github.com/marketplace/actions/npm-install-audit) [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) ![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen) [![GitHub stars](https://img.shields.io/github/stars/cryptostrapon/npm-install-audit?style=social)](https://github.com/cryptostrapon/npm-install-audit/stargazers)
 
 <p align="center"><img src="npm_audit_demo.gif" alt="npm-install-audit flags a postinstall hook, shell commands, base64 decoding and a curl pipe in a take-home repo" width="680"></p>
 
@@ -31,6 +31,12 @@ With Node 18 or newer:
 
 ```
 npx npm-install-audit ./take-home-task
+```
+
+In GitHub Actions, add one step after checkout and before any install step (details in [GitHub Action](#github-action)):
+
+```yaml
+- uses: cryptostrapon/npm-install-audit@v1.3.2
 ```
 
 Or without npm, as a single file:
