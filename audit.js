@@ -129,6 +129,16 @@ function checkRegistryConfig(file) {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+    const yarnPath = yarn && line.match(/^yarnPath\s*:\s*(.*)$/);
+    if (yarnPath) {
+      const value = yarnPath[1].trim();
+      const quoted = value.match(/^(["'])(.*?)\1\s*(?:#.*)?$/);
+      const binary = quoted ? quoted[2] : value.split(/\s+#/)[0].trim();
+      if (binary && !binary.startsWith("#") && (quoted || !/^(null|~)$/i.test(binary))) {
+        flag(file, "yarnPath configures Yarn to run a project binary: " + binary);
+      }
+      continue;
+    }
     if (yarn ? /^npmAuth(Token|Ident)\s*:/.test(line) : /(^|:)_(authToken|auth|password)\s*=/.test(line)) {
       flag(file, "ships a registry auth token, so the install can fetch packages the public registry does not show (token not printed)");
       continue;

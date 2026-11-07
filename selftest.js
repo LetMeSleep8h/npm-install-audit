@@ -79,6 +79,21 @@ write(
   })
 );
 
+// Yarn can replace the installed binary with a project-local file.
+const yarnMarker = path.join(tmp, "yarn-binary-executed");
+const yarnBinary = ".yarn/releases/yarn-fixture.cjs";
+write("yarn-path/.yarnrc.yml", "yarnPath: " + yarnBinary + "\n");
+write("yarn-path/" + yarnBinary, 'require("fs").writeFileSync(' + JSON.stringify(yarnMarker) + ', "executed");\n');
+write("yarn-quotes/.yarnrc.yml", 'yarnPath: ".yarn/releases/yarn custom.cjs" # project binary\n');
+write("yarn-single/.yarnrc.yml", "yarnPath: '.yarn/releases/yarn#custom.cjs'\n");
+write("yarn-comment/.yarnrc.yml", "yarnPath: .yarn/releases/yarn.cjs # project binary\n");
+write("yarn-none/.yarnrc.yml", "# yarnPath: ignored.cjs\n; yarnPath: ignored.cjs\notherYarnPath: ignored.cjs\nyarnPath: null\n");
+write("yarn-none/.npmrc", "yarnPath=ignored.cjs\n");
+write("yarn-none/.yarnrc", "yarnPath: ignored.cjs\n");
+write("yarn-none/.yarnrc.yml.example", "yarnPath: ignored.cjs\n");
+write("yarn-empty/.yarnrc.yml", "yarnPath: # no binary configured\n");
+write("yarn-mixed/.yarnrc.yml", 'yarnPath: ".yarn/releases/yarn.cjs"\nnpmAuthToken: npm_SECRET456\nnpmRegistryServer: "https://yarn.evil.example"\n');
+
 const run = (dir, extra = []) =>
   spawnSync(process.execPath, [path.join(__dirname, "audit.js"), ...extra, dir], { encoding: "utf8" });
 
@@ -174,6 +189,27 @@ check("--json bad is valid JSON", parsed !== null);
 check("--json findings have file", parsed && parsed.every((f) => typeof f.file === "string"));
 check("--json findings have rule", parsed && parsed.every((f) => typeof f.rule === "string"));
 check("--json findings have message", parsed && parsed.every((f) => typeof f.message === "string"));
+
+const yarnPath = run(path.join(tmp, "yarn-path"));
+check("yarnPath fixture exits 1", yarnPath.status === 1);
+check("flags Yarn binary path in text output", yarnPath.stdout.includes(".yarnrc.yml: yarnPath configures Yarn to run a project binary: " + yarnBinary));
+check("does not execute the configured Yarn binary", !fs.existsSync(yarnMarker));
+const yarnJson = run(path.join(tmp, "yarn-path"), ["--json"]);
+const yarnFindings = JSON.parse(yarnJson.stdout);
+check("--json yarnPath exits 1", yarnJson.status === 1);
+check("--json includes the configured Yarn binary", yarnFindings.length === 1 && yarnFindings[0].file === ".yarnrc.yml" && yarnFindings[0].rule === "yarnPath configures Yarn to run a project binary: " + yarnBinary);
+check("--json does not execute the configured Yarn binary", !fs.existsSync(yarnMarker));
+const yarnQuoted = JSON.parse(run(path.join(tmp, "yarn-quotes"), ["--json"]).stdout);
+check("keeps spaces in a quoted Yarn binary path", yarnQuoted.length === 1 && yarnQuoted[0].rule.endsWith(".yarn/releases/yarn custom.cjs"));
+const yarnSingle = JSON.parse(run(path.join(tmp, "yarn-single"), ["--json"]).stdout);
+check("keeps hash characters inside a quoted Yarn binary path", yarnSingle.length === 1 && yarnSingle[0].rule.endsWith(".yarn/releases/yarn#custom.cjs"));
+const yarnComment = JSON.parse(run(path.join(tmp, "yarn-comment"), ["--json"]).stdout);
+check("omits trailing comments from a Yarn binary path", yarnComment.length === 1 && yarnComment[0].rule.endsWith(".yarn/releases/yarn.cjs"));
+check("ignores commented, null and lookalike yarnPath settings", run(path.join(tmp, "yarn-none")).status === 0);
+check("ignores an empty yarnPath setting", run(path.join(tmp, "yarn-empty")).status === 0);
+const yarnMixed = run(path.join(tmp, "yarn-mixed"));
+check("still flags Yarn registry settings alongside yarnPath", /yarnPath configures Yarn/.test(yarnMixed.stdout) && /ships a registry auth token/.test(yarnMixed.stdout) && /installs come from another registry/.test(yarnMixed.stdout));
+check("still redacts Yarn registry tokens alongside yarnPath", !yarnMixed.stdout.includes("SECRET456"));
 
 fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(ok ? 0 : 1);
