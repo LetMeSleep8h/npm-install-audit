@@ -121,6 +121,12 @@ function checkSource(file) {
 }
 
 const OFFICIAL_REGISTRY = /^https?:\/\/registry\.(npmjs\.org|yarnpkg\.com)\/?$/i;
+const NPM_CONFIG_RISKY = {
+  "script-shell": "script-shell selects the program npm uses to run scripts",
+  "ignore-scripts": "ignore-scripts=false explicitly enables npm lifecycle scripts",
+  "node-options": "node-options passes options to Node.js lifecycle processes",
+  "init-module": "init-module selects the module npm init loads",
+};
 
 function checkRegistryConfig(file) {
   let text = "";
@@ -141,6 +147,16 @@ function checkRegistryConfig(file) {
     }
     if (yarn ? /^npmAuth(Token|Ident)\s*:/.test(line) : /(^|:)_(authToken|auth|password)\s*=/.test(line)) {
       flag(file, "ships a registry auth token, so the install can fetch packages the public registry does not show (token not printed)");
+      continue;
+    }
+    const setting = /\.npmrc$/.test(file) && line.match(/^(script-shell|ignore-scripts|node-options|init-module)\s*=\s*(.*)$/);
+    if (setting) {
+      const value = setting[2].trim();
+      const quoted = value.match(/^(["'])(.*?)\1\s*(?:[;#].*)?$/);
+      const configured = quoted ? quoted[2] : value.split(/[;#]/)[0].trim();
+      if (configured && (setting[1] !== "ignore-scripts" || configured === "false")) {
+        flag(file, NPM_CONFIG_RISKY[setting[1]]);
+      }
       continue;
     }
     const m = yarn

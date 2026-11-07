@@ -44,6 +44,24 @@ write("ts-bad/src/types.cts", '// plain type-only file, safe\nexport type Foo = 
 write("ts-clean/package.json", JSON.stringify({ name: "ts-clean" }));
 write("ts-clean/src/index.ts", 'export const greet = (name: string) => `Hello, ${name}`;\n');
 
+// Project npm configuration can change which programs or scripts npm runs.
+const npmrcSettings = [
+  ["script-shell", "./project-shell", "script-shell selects the program npm uses to run scripts"],
+  ["ignore-scripts", "false", "ignore-scripts=false explicitly enables npm lifecycle scripts"],
+  ["node-options", "--require=./project-bootstrap.cjs", "node-options passes options to Node.js lifecycle processes"],
+  ["init-module", "./project-init.cjs", "init-module selects the module npm init loads"],
+];
+for (const [key, value] of npmrcSettings) write("npmrc-" + key + "/.npmrc", key + "=" + value + "\n");
+const npmrcMarker = path.join(tmp, "npmrc-module-executed");
+for (const [dir, file] of [["node-options", "project-bootstrap.cjs"], ["init-module", "project-init.cjs"]]) {
+  write("npmrc-" + dir + "/" + file, 'require("fs").writeFileSync(' + JSON.stringify(npmrcMarker) + ', "executed");\n');
+}
+write("npmrc-boundary/.npmrc", '  ignore-scripts = "false" ; explicit override\r\nscript-shell = "./custom shell" # custom shell\r\n');
+write("npmrc-safe/.npmrc", "# script-shell=ignored\n; node-options=ignored\n# init-module=ignored\n; ignore-scripts=false\nignore-scripts=true\nnode-options=\ninit-module=\"\"\nscript-shell=''\nscript-shell-example=ignored\nignore-scripts=falsehood\n");
+write("npmrc-yarn/.yarnrc", "script-shell=ignored\nignore-scripts=false\nnode-options=ignored\ninit-module=ignored\n");
+write("npmrc-yarn/.yarnrc.yml", "script-shell=ignored\nignore-scripts=false\nnode-options=ignored\ninit-module=ignored\n");
+write("npmrc-mixed/.npmrc", "node-options=--require=./project-bootstrap.cjs\n//registry.npmjs.org/:_authToken=npm_SECRET789\n@acme:registry=https://npm.evil.example/\n");
+
 // Registry config fixtures (v1.3.0): a token or a private registry in the project
 write("npmrc-bad/package.json", JSON.stringify({ name: "npmrc-bad" }));
 write("npmrc-bad/frontend/.npmrc", "//registry.npmjs.org/:_authToken=npm_SECRET123\n@acme:registry=https://npm.evil.example/\n");
@@ -152,6 +170,23 @@ check("flags bare user/repo dep", /bare user\/repo GitHub dependency/.test(gitDe
 check("flags link: dep", /local link: dependency/.test(gitDep.stdout));
 check("flags non-tarball URL dep", /"risky-url".*URL dependency/.test(gitDep.stdout));
 check("does not flag ~range or dist-tag", !/"scoped-safe"|"tag-safe"/.test(gitDep.stdout));
+
+for (const [key, , message] of npmrcSettings) {
+  const result = run(path.join(tmp, "npmrc-" + key));
+  check(key + " override exits 1", result.status === 1);
+  check("flags " + key + " override in text output", result.stdout.includes(".npmrc: " + message));
+  const json = run(path.join(tmp, "npmrc-" + key), ["--json"]);
+  const findings = JSON.parse(json.stdout);
+  check("--json reports " + key + " override", json.status === 1 && findings.length === 1 && findings[0].file === ".npmrc" && findings[0].rule === message);
+}
+const npmrcBoundary = JSON.parse(run(path.join(tmp, "npmrc-boundary"), ["--json"]).stdout);
+check("handles quoted npmrc values, comments, spacing and CRLF", npmrcBoundary.length === 2 && npmrcBoundary.some((f) => f.rule.includes("ignore-scripts=false")) && npmrcBoundary.some((f) => f.rule.startsWith("script-shell ")));
+check("ignores safe, empty, commented and lookalike npmrc settings", run(path.join(tmp, "npmrc-safe")).status === 0);
+check("does not apply npm-only settings to Yarn configs", run(path.join(tmp, "npmrc-yarn")).status === 0);
+const npmrcMixed = run(path.join(tmp, "npmrc-mixed"));
+check("keeps registry and token findings alongside npm overrides", /node-options passes options/.test(npmrcMixed.stdout) && /ships a registry auth token/.test(npmrcMixed.stdout) && /@acme packages install from another registry/.test(npmrcMixed.stdout));
+check("still redacts tokens alongside npm overrides", !npmrcMixed.stdout.includes("SECRET789"));
+check("does not execute modules referenced by npmrc settings", !fs.existsSync(npmrcMarker));
 
 // PR #4: --json flag checks
 const npmrcBad = run(path.join(tmp, "npmrc-bad"));
