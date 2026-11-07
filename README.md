@@ -8,6 +8,8 @@ A small Node script to run **before** `npm install` on a repo you did not write:
 
 It reads `package.json` for install hooks (`preinstall`, `install`, `postinstall`, `prepare`) and dependencies that bypass the npm registry, and scans `.js`, `.cjs`, `.mjs`, `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx` and `.sh` files for patterns that fake interview repos and malicious packages tend to use.
 
+**New in 1.4:** it flags `.pnpmfile.cjs` hook files, a `yarnPath` that points Yarn at a binary inside the project, and project `.npmrc` settings that change how npm runs scripts (`script-shell`, `ignore-scripts=false`, `node-options`, `init-module`). All three checks were contributed by [@Doomguy-BFG9000](https://github.com/Doomguy-BFG9000).
+
 **New in 1.3:** it checks `.npmrc`, `.yarnrc` and `.yarnrc.yml` for an auth token or a registry other than npmjs.org. A project from a stranger that ships its own token can install a package nobody can see on the public registry, which is how a recent fake Fiverr job hid its loader. The token itself is never printed.
 
 **New in 1.1:** it also checks `.git/hooks`, `.git/config` and `.vscode/tasks.json`. A repo sent as a zip can carry active git hooks that run on `git pull`, `git checkout` or `git commit`, so the attack does not need `npm install` at all.
@@ -36,7 +38,7 @@ npx npm-install-audit ./take-home-task
 In GitHub Actions, add one step after checkout and before any install step (details in [GitHub Action](#github-action)):
 
 ```yaml
-- uses: cryptostrapon/npm-install-audit@v1.3.2
+- uses: cryptostrapon/npm-install-audit@v1.4.0
 ```
 
 Or without npm, as a single file:
@@ -76,7 +78,7 @@ Run the same check in a workflow, for example on a pull request from someone you
 
 ```yaml
 - uses: actions/checkout@v5
-- uses: cryptostrapon/npm-install-audit@v1.3.2
+- uses: cryptostrapon/npm-install-audit@v1.4.0
   with:
     path: .                  # folder to check
     fail-on-findings: true   # set to false to only report
@@ -117,6 +119,7 @@ A clean result is not proof of safety. Obfuscated code, code fetched later, and 
 
 ## Changelog
 
+- **1.4.0:** flags `.pnpmfile.cjs` hook files (#15), `yarnPath` pointing Yarn at a project binary (#17) and risky project `.npmrc` settings: `script-shell`, `ignore-scripts=false`, `node-options`, `init-module` (#18). Thanks @Doomguy-BFG9000.
 - **1.3.2:** adds a GitHub Action (`action.yml`), so the same check can run in a workflow before any install step. No change to the checks.
 - **1.3.1:** available on npm (`npx npm-install-audit ./repo`). Releases are published from GitHub Actions through npm trusted publishing, with provenance and no stored npm token. No change to the checks.
 - **1.3.0:** flags `.npmrc` and Yarn config files that ship a registry auth token or point installs to a non-npmjs registry, including scoped `@scope:registry` entries.
