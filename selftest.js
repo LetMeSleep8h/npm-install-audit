@@ -112,6 +112,36 @@ write("yarn-none/.yarnrc.yml.example", "yarnPath: ignored.cjs\n");
 write("yarn-empty/.yarnrc.yml", "yarnPath: # no binary configured\n");
 write("yarn-mixed/.yarnrc.yml", 'yarnPath: ".yarn/releases/yarn.cjs"\nnpmAuthToken: npm_SECRET456\nnpmRegistryServer: "https://yarn.evil.example"\n');
 
+// Bun can load scripts before running project files or tests.
+const bunMarker = path.join(tmp, "bun-preload-executed");
+write("bun-preload/packages/app/bunfig.toml", [
+  'preload = ["./runtime.js"]',
+  '[ "test" ] # test scripts ]',
+  "'preload' = [",
+  '  "./setup #1].js", # "./not-a-path.js"',
+  "  './test,helper.js',",
+  '  "./control\u009b\\n.js",',
+  "]",
+  "[install]",
+  'preload = ["./ignored.js"]',
+].join("\r\n"));
+write("bun-preload/packages/app/runtime.js", 'require("fs").writeFileSync(' + JSON.stringify(bunMarker) + ', "executed");\n');
+write("bun-preload-scalar/bunfig.toml", 'preload = "./runtime.js"\ntest.preload = "./setup.js"\n');
+write("bun-preload-clean/bunfig.toml", [
+  '# preload = ["./comment.js"]',
+  "preload = []",
+  'example = """',
+  "[test]",
+  'preload = ["./inside-a-string.js"]',
+  '"""',
+  "[install]",
+  'preload = ["./install.js"]',
+  "[test.reporters]",
+  'preload = ["./reporter.js"]',
+].join("\n"));
+write("bun-preload-clean/bunfig.toml.example", 'preload = ["./example.js"]\n');
+write("bun-preload-clean/node_modules/pkg/bunfig.toml", 'preload = ["./dependency.js"]\n');
+
 const run = (dir, extra = []) =>
   spawnSync(process.execPath, [path.join(__dirname, "audit.js"), ...extra, dir], { encoding: "utf8" });
 
@@ -245,6 +275,20 @@ check("ignores an empty yarnPath setting", run(path.join(tmp, "yarn-empty")).sta
 const yarnMixed = run(path.join(tmp, "yarn-mixed"));
 check("still flags Yarn registry settings alongside yarnPath", /yarnPath configures Yarn/.test(yarnMixed.stdout) && /ships a registry auth token/.test(yarnMixed.stdout) && /installs come from another registry/.test(yarnMixed.stdout));
 check("still redacts Yarn registry tokens alongside yarnPath", !yarnMixed.stdout.includes("SECRET456"));
+
+const bun = run(path.join(tmp, "bun-preload"));
+const bunFile = path.join("packages", "app", "bunfig.toml");
+const bunRule = 'preload configures Bun to run scripts automatically: "./runtime.js"';
+const bunTestRule = '[test] preload configures Bun to run scripts automatically: "./setup #1].js", \'./test,helper.js\', "./control\\u009b\\n.js"';
+check("Bun preload fixture exits 1", bun.status === 1);
+check("flags Bun runtime and test preloads with their paths", bun.stdout.includes(bunFile + ": " + bunRule + "\n") && bun.stdout.includes(bunFile + ": " + bunTestRule + "\n"));
+const bunJson = run(path.join(tmp, "bun-preload"), ["--json"]);
+const bunFindings = JSON.parse(bunJson.stdout);
+check("--json includes only the Bun runtime and test findings", bunJson.status === 1 && bunFindings.length === 2 && bunFindings.every((finding) => finding.file === bunFile) && bunFindings[0].rule === bunRule && bunFindings[1].rule === bunTestRule);
+check("does not execute the configured Bun preload scripts", !fs.existsSync(bunMarker));
+const bunScalar = run(path.join(tmp, "bun-preload-scalar"));
+check("flags scalar Bun preloads and dotted test settings", bunScalar.status === 1 && bunScalar.stdout.includes(bunRule + "\n") && bunScalar.stdout.includes('[test] preload configures Bun to run scripts automatically: "./setup.js"\n'));
+check("ignores empty, commented, unrelated and dependency Bun preloads", run(path.join(tmp, "bun-preload-clean")).status === 0);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(ok ? 0 : 1);

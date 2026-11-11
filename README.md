@@ -92,6 +92,7 @@ The step fails when anything is flagged and sets the `findings` output to the nu
 
 - install hooks that run a command
 - `.pnpmfile.cjs` hook files, which pnpm runs during install even without a `package.json` install script
+- `preload` and `[test] preload` in `bunfig.toml`, which run scripts before Bun runs project files or tests
 - dependencies that bypass the npm registry: git URLs (`git+https`, `git+ssh`, `git://`), `github:`/`gitlab:`/`bitbucket:` and bare `user/repo` shorthands, tarball and other URLs, `file:` and `link:` paths
 - shell execution (`child_process`, `execSync`, `spawn`)
 - runtime code evaluation (`eval`, `new Function`)

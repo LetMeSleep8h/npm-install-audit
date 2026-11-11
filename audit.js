@@ -171,6 +171,55 @@ function checkRegistryConfig(file) {
   }
 }
 
+function checkBunConfig(file) {
+  let text = "";
+  try { if (fs.statSync(file).size < 2e5) text = fs.readFileSync(file, "utf8"); } catch { return; }
+  text = text.replace(/^\uFEFF/, "");
+
+  const quotedString = String.raw`"(?:\\[^\r\n]|[^"\\\r\n])*"|'[^'\r\n]*'`;
+  const key = String.raw`(?:[\w-]+|${quotedString})`;
+  const dottedKey = String.raw`${key}(?:[ \t]*\.[ \t]*${key})*`;
+  const statements = new RegExp(String.raw`^[ \t]*(?:\[([^\r\n]+?)\][ \t]*(?:#.*)?$|(${dottedKey})[ \t]*=[ \t]*)`, "gm");
+  const preloadKey = /^(?:preload|"preload"|'preload')$/;
+  const testTable = /^(?:test|"test"|'test')$/;
+  const dottedTestPreload = /^(?:test|"test"|'test')[ \t]*\.[ \t]*(?:preload|"preload"|'preload')$/;
+
+  // Consume complete values so comments and multiline strings cannot look like settings.
+  const multilineString = String.raw`"""(?:\\[\s\S]|"(?!"")|[^"\\])*"""(?:"{1,2})?|'''[\s\S]*?'''(?:'{1,2})?`;
+  const valueTokens = new RegExp(String.raw`(${multilineString}|${quotedString})|#[^\r\n]*|([\[{])|([\]}])`, "g");
+  let section = "root";
+  for (let statement; (statement = statements.exec(text));) {
+    const [, table, setting] = statement;
+    if (table !== undefined) {
+      section = testTable.test(table.trim()) ? "test" : "other";
+      continue;
+    }
+
+    const first = text[statements.lastIndex];
+    if (!/^[\[{"']$/.test(first)) continue;
+    let label = "";
+    if (section === "root" && preloadKey.test(setting)) label = "preload";
+    if ((section === "test" && preloadKey.test(setting)) || (section === "root" && dottedTestPreload.test(setting))) label = "[test] preload";
+
+    const paths = [];
+    const pathDepth = first === "[" ? 1 : 0;
+    let depth = 0;
+    let token;
+    valueTokens.lastIndex = statements.lastIndex;
+    while ((token = valueTokens.exec(text))) {
+      const [, string, open, close] = token;
+      if (open) depth++;
+      if (close) depth--;
+      if (label && string && depth === pathDepth && !/^(?:"{2}|'{2}|"{6}|'{6})$/.test(string)) {
+        paths.push(string.replace(/[\x00-\x1f\x7f-\x9f]/g, (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0")));
+      }
+      if (depth === 0) break;
+    }
+    statements.lastIndex = token ? valueTokens.lastIndex : text.length;
+    if (token && paths.length) flag(file, label + " configures Bun to run scripts automatically: " + paths.join(", "));
+  }
+}
+
 function checkGit(dir) {
   const gitDir = path.join(dir, ".git");
   let st;
@@ -222,6 +271,7 @@ function walk(dir, depth) {
     if (!e.isFile()) continue;
     if (e.name === "package.json") { checkPackage(p); continue; }
     if (e.name === ".npmrc" || e.name === ".yarnrc" || e.name === ".yarnrc.yml") { checkRegistryConfig(p); continue; }
+    if (e.name === "bunfig.toml") { checkBunConfig(p); continue; }
     if (e.name === ".pnpmfile.cjs") flag(p, "pnpm hook file runs automatically during pnpm install");
     if (SOURCE_EXT.test(e.name)) {
       let size = 0;
