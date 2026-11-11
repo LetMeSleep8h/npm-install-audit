@@ -132,6 +132,7 @@ function checkRegistryConfig(file) {
   let text = "";
   try { if (fs.statSync(file).size < 2e5) text = fs.readFileSync(file, "utf8"); } catch { return; }
   const yarn = /\.yarnrc\.yml$/.test(file);
+  const yarnClassic = path.basename(file) === ".yarnrc";
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#") || line.startsWith(";")) continue;
@@ -142,6 +143,26 @@ function checkRegistryConfig(file) {
       const binary = quoted ? quoted[2] : value.split(/\s+#/)[0].trim();
       if (binary && !binary.startsWith("#") && (quoted || !/^(null|~)$/i.test(binary))) {
         flag(file, "yarnPath configures Yarn to run a project binary: " + binary);
+      }
+      continue;
+    }
+    const classicPath = yarnClassic && line.match(/^(?:yarn-path|"yarn-path")(\s*:\s*|\s+)(.*)$/);
+    if (classicPath) {
+      const [, separator, value] = classicPath;
+      const quoted = value.match(/^("(?:[^"\\]|\\.)*")\s*(?:#.*)?$/);
+      const singleQuoted = separator.includes(":") && value.match(/^'((?:[^']|'')*)'\s*(?:#.*)?$/);
+      const bare = value.match(/^([^#="'\s][^"'\s]*)(?:\s+#.*)?$/);
+      let binary;
+      if (quoted) {
+        try { binary = JSON.parse(quoted[1]); } catch {}
+      } else if (singleQuoted) {
+        binary = singleQuoted[1].replace(/''/g, "'");
+      } else if (bare && bare[1] !== "false") {
+        binary = bare[1];
+      }
+      if (binary) {
+        const displayPath = binary.replace(/[\x00-\x1f\x7f-\x9f]/g, (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"));
+        flag(file, "yarn-path configures Yarn to run a project binary: " + displayPath);
       }
       continue;
     }

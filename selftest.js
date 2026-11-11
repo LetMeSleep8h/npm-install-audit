@@ -112,6 +112,17 @@ write("yarn-none/.yarnrc.yml.example", "yarnPath: ignored.cjs\n");
 write("yarn-empty/.yarnrc.yml", "yarnPath: # no binary configured\n");
 write("yarn-mixed/.yarnrc.yml", 'yarnPath: ".yarn/releases/yarn.cjs"\nnpmAuthToken: npm_SECRET456\nnpmRegistryServer: "https://yarn.evil.example"\n');
 
+const classicBinary = "./bin/yarn # custom.cjs";
+write("yarn-classic/.yarnrc", "yarn-path " + JSON.stringify(classicBinary) + " # project binary\r\n");
+write("yarn-classic/" + classicBinary, 'require("fs").writeFileSync(' + JSON.stringify(yarnMarker) + ', "executed");\n');
+write("yarn-classic-bare/.yarnrc", "yarn-path ./bin/yarn.cjs # project binary\n");
+write("yarn-classic-escaped/.yarnrc", '"yarn-path": "./bin/yarn\\\"custom.cjs"\n');
+write("yarn-classic-controls/.yarnrc", 'yarn-path "./bin/yarn\\u001b\\u0085\\n.cjs"\n');
+write("yarn-classic-false-path/.yarnrc", 'yarn-path "false"\n');
+write("yarn-classic-clean/.yarnrc", '# yarn-path ./ignored.cjs\nyarn-path-extra ./ignored.cjs\nyarn-path false # disabled\nyarn-path ""\nyarn-path # empty\nyarn-path = ./ignored.cjs\n');
+write("yarn-classic-clean/.npmrc", "yarn-path ./ignored.cjs\n");
+write("yarn-classic-clean/.yarnrc.yml", "yarn-path: ./ignored.cjs\n");
+
 const run = (dir, extra = []) =>
   spawnSync(process.execPath, [path.join(__dirname, "audit.js"), ...extra, dir], { encoding: "utf8" });
 
@@ -245,6 +256,20 @@ check("ignores an empty yarnPath setting", run(path.join(tmp, "yarn-empty")).sta
 const yarnMixed = run(path.join(tmp, "yarn-mixed"));
 check("still flags Yarn registry settings alongside yarnPath", /yarnPath configures Yarn/.test(yarnMixed.stdout) && /ships a registry auth token/.test(yarnMixed.stdout) && /installs come from another registry/.test(yarnMixed.stdout));
 check("still redacts Yarn registry tokens alongside yarnPath", !yarnMixed.stdout.includes("SECRET456"));
+
+const classic = run(path.join(tmp, "yarn-classic"));
+const classicRule = "yarn-path configures Yarn to run a project binary: ";
+check("yarn-path fixture exits 1", classic.status === 1);
+check("prints the quoted Yarn Classic path without its comment", classic.stdout.includes(".yarnrc: " + classicRule + classicBinary + "\n"));
+const classicJson = run(path.join(tmp, "yarn-classic"), ["--json"]);
+const classicFindings = JSON.parse(classicJson.stdout);
+check("--json includes the Yarn Classic finding", classicJson.status === 1 && classicFindings.length === 1 && classicFindings[0].file === ".yarnrc" && classicFindings[0].rule === classicRule + classicBinary);
+check("does not execute the configured Yarn Classic binary", !fs.existsSync(yarnMarker));
+check("prints an unquoted Yarn Classic path", run(path.join(tmp, "yarn-classic-bare")).stdout.includes(classicRule + "./bin/yarn.cjs\n"));
+check("handles a quoted key and escaped quote in a Yarn Classic path", run(path.join(tmp, "yarn-classic-escaped")).stdout.includes(classicRule + './bin/yarn"custom.cjs\n'));
+check("prints control characters in a Yarn Classic path as escapes", run(path.join(tmp, "yarn-classic-controls")).stdout.includes(classicRule + "./bin/yarn\\u001b\\u0085\\u000a.cjs\n"));
+check("treats quoted false as a Yarn Classic path", run(path.join(tmp, "yarn-classic-false-path")).stdout.includes(classicRule + "false\n"));
+check("ignores disabled, empty, commented and lookalike yarn-path settings", run(path.join(tmp, "yarn-classic-clean")).status === 0);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(ok ? 0 : 1);
