@@ -32,6 +32,42 @@ write("gitcfg/package.json", JSON.stringify({ name: "gitcfg" }));
 
 // VS Code task fixture (v1.1.0 feature)
 write("vscodepad/.vscode/tasks.json", JSON.stringify({ tasks: [{ runOptions: { runOn: "folderOpen" } }] }));
+
+// Dev container lifecycle hooks can run on the host or inside the container.
+const devContainerMarker = path.join(tmp, "devcontainer-command-executed");
+const devContainerSecret = "DEVCONTAINER_COMMAND_SECRET";
+const hostCommand = `echo ${devContainerSecret} > "${devContainerMarker}" # https://example.invalid/*literal*/,}`;
+write("devcontainer/.devcontainer/devcontainer.json", [
+  "\uFEFF{",
+  '  /* "postAttachCommand": "commented out", */',
+  '  "initializeCommand": ' + JSON.stringify(hostCommand) + ", // host shell command",
+  '  "onCreateCommand": ["echo", "' + devContainerSecret + '",],',
+  '  "updateContentCommand": {"task": ["echo", "' + devContainerSecret + '"],},',
+  '  "postCreateCommand": "echo ' + devContainerSecret + '",',
+  "}",
+].join("\r\n"));
+write("devcontainer/.devcontainer.json", JSON.stringify({ postStartCommand: "echo " + devContainerSecret }));
+write("devcontainer/.devcontainer/linux/devcontainer.json", JSON.stringify({ postAttachCommand: "echo " + devContainerSecret }));
+
+write("devcontainer-clean/.devcontainer.json", [
+  "{",
+  '  "name": "a string containing \\"initializeCommand\\": \\"ignore\\",}",',
+  '  "initializeCommand": "",',
+  '  "onCreateCommand": [],',
+  '  "updateContentCommand": {},',
+  '  "postCreateCommand": null,',
+  '  "postStartCommand": {"empty": [], "blank": "  "},',
+  '  "customizations": {"postAttachCommand": "echo nested"},',
+  '  "postAttachCommandExtra": "echo lookalike",',
+  '  // "postAttachCommand": "echo commented out",',
+  "}",
+].join("\n"));
+const ignoredDevContainer = '{"initializeCommand":"echo ignored"}';
+write("devcontainer-clean/devcontainer.json", ignoredDevContainer);
+write("devcontainer-clean/.devcontainer/linux/extra/devcontainer.json", ignoredDevContainer);
+write("devcontainer-clean/.devcontainer.json.example", ignoredDevContainer);
+write("devcontainer-clean/node_modules/demo/.devcontainer.json", ignoredDevContainer);
+write("devcontainer-clean/.git/.devcontainer/devcontainer.json", ignoredDevContainer);
 write("vscodepad/package.json", JSON.stringify({ name: "vscodepad" }));
 
 // TypeScript fixtures (PR #4 feature)
@@ -245,6 +281,25 @@ check("ignores an empty yarnPath setting", run(path.join(tmp, "yarn-empty")).sta
 const yarnMixed = run(path.join(tmp, "yarn-mixed"));
 check("still flags Yarn registry settings alongside yarnPath", /yarnPath configures Yarn/.test(yarnMixed.stdout) && /ships a registry auth token/.test(yarnMixed.stdout) && /installs come from another registry/.test(yarnMixed.stdout));
 check("still redacts Yarn registry tokens alongside yarnPath", !yarnMixed.stdout.includes("SECRET456"));
+
+const defaultDevContainer = path.join(".devcontainer", "devcontainer.json");
+const expectedDevContainerHooks = [
+  [defaultDevContainer, "initializeCommand", "on the host machine"],
+  [defaultDevContainer, "onCreateCommand", "inside the dev container"],
+  [defaultDevContainer, "updateContentCommand", "inside the dev container"],
+  [defaultDevContainer, "postCreateCommand", "inside the dev container"],
+  [".devcontainer.json", "postStartCommand", "inside the dev container"],
+  [path.join(".devcontainer", "linux", "devcontainer.json"), "postAttachCommand", "inside the dev container"],
+];
+const devContainer = run(path.join(tmp, "devcontainer"));
+check("dev container fixture exits 1", devContainer.status === 1);
+check("reports host and container hooks in all three dev container config locations", expectedDevContainerHooks.every(([file, hook, context]) => devContainer.stdout.includes(`${file}: ${hook} runs automatically ${context}`)));
+const devContainerJson = run(path.join(tmp, "devcontainer"), ["--json"]);
+const devContainerFindings = JSON.parse(devContainerJson.stdout);
+check("--json lists each configured dev container lifecycle hook once", devContainerJson.status === 1 && devContainerFindings.length === expectedDevContainerHooks.length && expectedDevContainerHooks.every(([file, hook, context]) => devContainerFindings.some((finding) => finding.file === file && finding.rule.startsWith(`${hook} runs automatically ${context}`))));
+check("dev container findings omit command payloads", !devContainer.stdout.includes(devContainerSecret) && !devContainerJson.stdout.includes(devContainerSecret));
+check("does not execute dev container lifecycle hooks", !fs.existsSync(devContainerMarker));
+check("ignores empty, commented, nested and misplaced dev container hooks", run(path.join(tmp, "devcontainer-clean")).status === 0);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(ok ? 0 : 1);

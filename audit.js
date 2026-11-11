@@ -25,6 +25,10 @@ try {
 }
 
 const HOOKS = ["preinstall", "install", "postinstall", "prepare"];
+const DEV_CONTAINER_HOOKS = [
+  "initializeCommand", "onCreateCommand", "updateContentCommand",
+  "postCreateCommand", "postStartCommand", "postAttachCommand",
+];
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
 const RISKY = [
@@ -206,6 +210,38 @@ function checkEditorConfig(dir) {
   if (/"runOn"\s*:\s*"folderOpen"/.test(text)) flag(tasks, "VS Code task runs when the folder is opened");
 }
 
+function checkDevContainerConfig(file) {
+  let config;
+  try {
+    const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    // Preserve quoted content and leave unterminated tokens for JSON.parse to reject.
+    const quoted = /"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)/.source;
+    const comments = new RegExp(quoted + String.raw`|(//)[^\r\n]*|/\*[\s\S]*?(?:(\*/)|$)`, "g");
+    const trailingCommas = new RegExp(quoted + String.raw`|,(?=\s*[}\]])`, "g");
+    const json = text.replace(comments, (token, lineComment, blockEnd) => lineComment || blockEnd ? " " : token)
+      .replace(trailingCommas, (token) => token === "," ? "" : token);
+    config = JSON.parse(json);
+  } catch {
+    return;
+  }
+  if (!config || typeof config !== "object" || Array.isArray(config)) return;
+
+  const isCommand = (command) => {
+    if (typeof command === "string") return /[^ \t\r\n]/.test(command);
+    return Array.isArray(command) && typeof command[0] === "string" && command[0].length > 0;
+  };
+  for (const hook of DEV_CONTAINER_HOOKS) {
+    if (!Object.hasOwn(config, hook)) continue;
+    const value = config[hook];
+    const commands = value && typeof value === "object" && !Array.isArray(value) ? Object.values(value) : [value];
+    if (!commands.some(isCommand)) continue;
+    const context = hook === "initializeCommand"
+      ? "on the host machine during dev container initialization"
+      : "inside the dev container";
+    flag(file, hook + " runs automatically " + context);
+  }
+}
+
 function walk(dir, depth) {
   if (depth > 8) return;
   let entries;
@@ -222,6 +258,11 @@ function walk(dir, depth) {
     if (!e.isFile()) continue;
     if (e.name === "package.json") { checkPackage(p); continue; }
     if (e.name === ".npmrc" || e.name === ".yarnrc" || e.name === ".yarnrc.yml") { checkRegistryConfig(p); continue; }
+    if (e.name === ".devcontainer.json" || (e.name === "devcontainer.json" &&
+        (path.basename(dir) === ".devcontainer" || path.basename(path.dirname(dir)) === ".devcontainer"))) {
+      checkDevContainerConfig(p);
+      continue;
+    }
     if (e.name === ".pnpmfile.cjs") flag(p, "pnpm hook file runs automatically during pnpm install");
     if (SOURCE_EXT.test(e.name)) {
       let size = 0;
